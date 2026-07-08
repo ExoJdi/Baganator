@@ -363,7 +363,7 @@ function Baganator.API.ImportString(importText, resultName)
   if importText:sub(1, 1) == "{" then
     local status
     status, data = pcall(C_EncodingUtil.DeserializeJSON, importText)
-    if not status or type(import) ~= "table" or import.addon ~= "Baganator" then
+    if not status or type(data) ~= "table" or (data.addon ~= "Baganator" and not data.categories) then
       error("Invalid Baganator import")
       return
     end
