@@ -1,0 +1,1062 @@
+local addonTable = select(2, ...)
+
+local WHITE8X8 = "Interface\\Buttons\\WHITE8X8"
+
+local L = addonTable.Locales
+
+for key, value in pairs({
+  ELLESMEREUI_USE_FONT_X = "Use EllesmereUI font (%s)",
+  ELLESMEREUI_FONT_OUTLINE = "Font outline",
+  ELLESMEREUI_FONT_SHADOW = "Font shadow",
+  ELLESMEREUI_SETTING = "EllesmereUI setting",
+  ELLESMEREUI_OUTLINE_NONE = "None",
+  ELLESMEREUI_OUTLINE = "Outline",
+  ELLESMEREUI_THICK_OUTLINE = "Thick Outline",
+  ELLESMEREUI_MONOCHROME = "Monochrome",
+  ELLESMEREUI_MONOCHROME_OUTLINE = "Monochrome Outline",
+  ELLESMEREUI_MONOCHROME_THICK_OUTLINE = "Monochrome Thick Outline",
+  ELLESMEREUI_SHADOW_ALWAYS_ON = "Always on",
+  ELLESMEREUI_SHADOW_ALWAYS_OFF = "Always off",
+  ELLESMEREUI_SHIFT_MOVE = "Move window with Shift+drag",
+}) do
+  if rawget(L, key) == nil then
+    L[key] = value
+  end
+end
+
+local EUI_MEDIA = "Interface\\AddOns\\EllesmereUI\\media\\"
+local TEX_CLOSE = EUI_MEDIA .. "icons\\eui-close.png"
+local TEX_ARROW_DOWN = EUI_MEDIA .. "icons\\eui-arrow-down3.png"
+local TEX_ARROW_LEFT = EUI_MEDIA .. "icons\\eui-arrow-left.png"
+local TEX_ARROW_RIGHT = EUI_MEDIA .. "icons\\eui-arrow-right.png"
+
+local BTN_BG = { r = 0.08, g = 0.08, b = 0.08, a = 0.92 }
+local INSET_BG = { r = 0.04, g = 0.04, b = 0.04, a = 0.85 }
+local BORDER = { r = 0.2, g = 0.2, b = 0.2, a = 1 }
+local INPUT_BG = { r = 0.02, g = 0.02, b = 0.02, a = 1 }
+local SEPARATOR = { r = 0.15, g = 0.15, b = 0.15, a = 1 }
+local EMPTY_SLOT_BORDER = { r = 0.25, g = 0.25, b = 0.25 }
+
+local MODERN_FALLBACK = { r = 0.067, g = 0.067, b = 0.067, a = 0.97 }
+local function GetWindowBG()
+  local c = EllesmereUIDB and EllesmereUIDB.blizzWindowModernDefault
+  if not (c and c.r) then c = MODERN_FALLBACK end
+  return c.r or MODERN_FALLBACK.r, c.g or MODERN_FALLBACK.g,
+         c.b or MODERN_FALLBACK.b, c.a or MODERN_FALLBACK.a
+end
+
+local function GetWindowStyle()
+  local styles = EllesmereUIDB and EllesmereUIDB.blizzWindowSkinStyles
+  if type(styles) == "table" then
+    if styles.baganator == "modern" or styles.baganator == "eui" then
+      return styles.baganator
+    end
+    local modern, eui = 0, 0
+    for _, s in pairs(styles) do
+      if s == "modern" then
+        modern = modern + 1
+      elseif s == "eui" then
+        eui = eui + 1
+      end
+    end
+    if modern > eui then
+      return "modern"
+    end
+  end
+  return "eui"
+end
+
+local TEX_WINDOW_BG = EUI_MEDIA .. "modern_blizz.png"
+local BORDER_ATLAS = "AdventureMap_TopBorder"
+local BG_ASPECT = 561 / 433
+local BASE_L, BASE_R, BASE_T, BASE_B = 0.25, 1, 0, 0.75
+local BASE_U, BASE_V = BASE_R - BASE_L, BASE_B - BASE_T
+
+local function GetAccent()
+  local eg = EllesmereUI and EllesmereUI.ELLESMERE_GREEN
+  if eg and eg.r then
+    return eg.r, eg.g, eg.b
+  end
+  return 0.047, 0.824, 0.616
+end
+
+local function GetAccentBar()
+  local c = EllesmereUIDB and EllesmereUIDB.blizzWinAccentBar
+  if c and c.useCustom then
+    local col = c.color
+    if col then return col.r or 1, col.g or 1, col.b or 1 end
+    return 1, 1, 1
+  end
+  return GetAccent()
+end
+
+local allFontStrings = {}
+
+local function ResolveOutlineFlag()
+  local o = addonTable.Config.Get("skins.ellesmereui.font_outline")
+  if o == nil or o == "GLOBAL" then
+    local EUI = EllesmereUI
+    return (EUI and EUI.GetFontOutlineFlag and EUI.GetFontOutlineFlag("Baganator")) or ""
+  end
+  return o
+end
+
+local function ResolveShadow(outlineFlag)
+  local s = addonTable.Config.Get("skins.ellesmereui.font_shadow")
+  if s == "ON" then return true end
+  if s == "OFF" then return false end
+  local EUI = EllesmereUI
+  return outlineFlag == "" and (not (EUI and EUI.GetFontUseShadow) or EUI.GetFontUseShadow("Baganator"))
+end
+
+local function RestyleFont(fs, fallbackSize)
+  local path, size = fs:GetFont()
+  size = size or fallbackSize or 12
+  local EUI = EllesmereUI
+  if addonTable.Config.Get("skins.ellesmereui.use_font") and EUI and EUI.GetFontPath then
+    path = EUI.GetFontPath("Baganator")
+  end
+  if not path then return end
+  local flag = ResolveOutlineFlag()
+  fs:SetFont(path, size, flag)
+  if ResolveShadow(flag) then
+    fs:SetShadowColor(0, 0, 0, 1)
+    fs:SetShadowOffset(1, -1)
+  else
+    fs:SetShadowColor(0, 0, 0, 0)
+    fs:SetShadowOffset(0, 0)
+  end
+end
+
+local function ApplyEUIFont(fs, fallbackSize)
+  if not fs or not fs.GetFont then return end
+  if not fs.bgrEllesmereFonted then
+    fs.bgrEllesmereFonted = true
+    table.insert(allFontStrings, {fs = fs, size = fallbackSize})
+  end
+  RestyleFont(fs, fallbackSize)
+end
+
+local function RefreshAllFonts()
+  for _, entry in ipairs(allFontStrings) do
+    RestyleFont(entry.fs, entry.size)
+  end
+end
+
+local function ConvertTags(tags)
+  local res = {}
+  for _, tag in ipairs(tags) do
+    res[tag] = true
+  end
+  return res
+end
+
+local backdropInfo = {
+  bgFile = WHITE8X8,
+  edgeFile = WHITE8X8,
+  edgeSize = 1,
+}
+
+local possibleVisuals = {
+  "BotLeftCorner", "BotRightCorner", "BottomBorder", "LeftBorder", "RightBorder",
+  "TopRightCorner", "TopLeftCorner", "TopBorder", "TitleBg", "Bg",
+  "TopTileStreaks",
+}
+local function RemoveFrameTextures(frame)
+  for _, key in ipairs(possibleVisuals) do
+    if frame[key] then
+      frame[key]:Hide()
+      frame[key]:SetTexture()
+      frame[key] = nil
+    end
+  end
+  if frame.NineSlice then
+    for _, region in ipairs({frame.NineSlice:GetRegions()}) do
+      region:Hide()
+    end
+  end
+end
+
+local function StripRegions(frame, keys)
+  for _, key in ipairs(keys) do
+    local region = frame[key]
+    if region then
+      region:SetAlpha(0)
+    end
+  end
+end
+
+local function ApplyFlatBackdrop(frame, r, g, b, a)
+  if not frame.SetBackdrop then
+    Mixin(frame, BackdropTemplateMixin)
+  end
+  frame:SetBackdrop(backdropInfo)
+  frame:SetBackdropColor(r, g, b, a)
+  frame:SetBackdropBorderColor(BORDER.r, BORDER.g, BORDER.b, BORDER.a)
+end
+
+local texCoords = {0.08, 0.92, 0.08, 0.92}
+local function ItemButtonQualityHook(frame, quality)
+  if frame.bgrEllesmereHooked then
+    frame.IconBorder:SetTexture("Interface/AddOns/Baganator/Assets/Skins/dark-icon-border")
+    frame:ClearNormalTexture()
+    local c = quality and ITEM_QUALITY_COLORS[quality]
+    if c and quality > 1 then
+      frame.IconBorder:SetVertexColor(c.r, c.g, c.b, 1)
+    else
+      frame.IconBorder:SetVertexColor(EMPTY_SLOT_BORDER.r, EMPTY_SLOT_BORDER.g, EMPTY_SLOT_BORDER.b, 1)
+    end
+    frame.IconBorder:Show()
+  end
+end
+local function ItemButtonTextureHook(frame)
+  if frame.bgrEllesmereHooked then
+    (frame.icon or frame.Icon):SetTexCoord(unpack(texCoords))
+  end
+end
+
+local function StyleCloseButton(btn)
+  if not btn or btn.bgrEllesmereClose then return end
+  btn.bgrEllesmereClose = true
+  if btn.SetNormalTexture then btn:SetNormalTexture("") end
+  if btn.SetPushedTexture then btn:SetPushedTexture("") end
+  if btn.SetHighlightTexture then btn:SetHighlightTexture("") end
+  if btn.SetDisabledTexture then btn:SetDisabledTexture("") end
+  for _, region in ipairs({btn:GetRegions()}) do
+    if region:IsObjectType("Texture") then
+      region:SetAlpha(0)
+    end
+  end
+  local x = btn:CreateTexture(nil, "OVERLAY")
+  x:SetTexture(TEX_CLOSE)
+  x:SetSize(14, 14)
+  x:SetPoint("CENTER")
+  x:SetVertexColor(1, 1, 1, 0.75)
+  btn:HookScript("OnEnter", function()
+    local r, g, b = GetAccent()
+    x:SetVertexColor(r, g, b, 1)
+  end)
+  btn:HookScript("OnLeave", function()
+    x:SetVertexColor(1, 1, 1, 0.75)
+  end)
+end
+
+local function StyleButton(button)
+  StripRegions(button, {"Left", "Right", "Middle"})
+  button:ClearHighlightTexture()
+
+  ApplyFlatBackdrop(button, BTN_BG.r, BTN_BG.g, BTN_BG.b, BTN_BG.a)
+
+  local function SetHover(isHover)
+    if isHover and button:IsEnabled() then
+      local r, g, b = GetAccent()
+      button:SetBackdropBorderColor(r, g, b, 0.9)
+      button:SetBackdropColor(0.13, 0.13, 0.13, 1)
+    else
+      button:SetBackdropBorderColor(BORDER.r, BORDER.g, BORDER.b, BORDER.a)
+      button:SetBackdropColor(BTN_BG.r, BTN_BG.g, BTN_BG.b, BTN_BG.a)
+    end
+  end
+  button:HookScript("OnEnter", function() SetHover(true) end)
+  button:HookScript("OnLeave", function() SetHover(false) end)
+  button:HookScript("OnDisable", function()
+    button:SetBackdropColor(BTN_BG.r, BTN_BG.g, BTN_BG.b, 0.4)
+  end)
+  button:HookScript("OnEnable", function() SetHover(button:IsMouseOver()) end)
+
+  local fontString = button.GetFontString and button:GetFontString()
+  if fontString then
+    ApplyEUIFont(fontString, 12)
+  end
+end
+
+local function IsBaganatorRegion(region)
+  local current = region
+  for _ = 1, 12 do
+    if not current then return false end
+    if current.bgrEllesmereShell or current.bgrEllesmereDropdown then return true end
+    local name = current.GetName and current:GetName()
+    if name and name:find("^Baganator") then return true end
+    current = current.GetParent and current:GetParent()
+  end
+  return false
+end
+
+local function SkinOpenMenu(frame)
+  if not frame or frame:IsForbidden() or frame.bgrEllesmereMenuSkinned then return end
+  frame.bgrEllesmereMenuSkinned = true
+  for i = 1, select("#", frame:GetRegions()) do
+    local region = select(i, frame:GetRegions())
+    if region and region:IsObjectType("Texture") then
+      region:SetColorTexture(0.067, 0.067, 0.067, 1)
+      region:SetAlpha(0.97)
+      region:ClearAllPoints()
+      region:SetPoint("TOPLEFT", frame, "TOPLEFT", 1, -1)
+      region:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
+    end
+  end
+  local border = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  border:SetAllPoints(frame)
+  border:SetFrameLevel(frame:GetFrameLevel() + 5)
+  border:SetBackdrop({edgeFile = WHITE8X8, edgeSize = 1})
+  border:SetBackdropBorderColor(BORDER.r, BORDER.g, BORDER.b, BORDER.a)
+end
+
+local function EUIMenusEnabled()
+  return C_AddOns.IsAddOnLoaded("EllesmereUIBlizzardSkin")
+    and (not EllesmereUIDB or EllesmereUIDB.reskinPopupsMenus ~= false)
+end
+
+local menuHooked = false
+local function HookMenuManager()
+  if menuHooked or not (_G.Menu and _G.Menu.GetManager) then return end
+  local manager = _G.Menu.GetManager()
+  if not manager then return end
+  menuHooked = true
+  local function OnOpen(mgr, ownerRegion, menuDescription)
+    if EUIMenusEnabled() then return end
+    if not IsBaganatorRegion(ownerRegion) then return end
+    C_Timer.After(0, function()
+      local menu = mgr.GetOpenMenu and mgr:GetOpenMenu()
+      if menu then
+        SkinOpenMenu(menu)
+      end
+      if menuDescription and menuDescription.AddMenuAcquiredCallback then
+        menuDescription:AddMenuAcquiredCallback(function(frame)
+          C_Timer.After(0, function()
+            SkinOpenMenu(frame)
+          end)
+        end)
+      end
+    end)
+  end
+  hooksecurefunc(manager, "OpenMenu", OnOpen)
+  hooksecurefunc(manager, "OpenContextMenu", OnOpen)
+end
+
+local function StyleDropdown(button)
+  button.bgrEllesmereDropdown = true
+  StyleButton(button)
+  for i = 1, select("#", button:GetRegions()) do
+    local region = select(i, button:GetRegions())
+    if region:IsObjectType("Texture") then
+      region:SetAlpha(0)
+      hooksecurefunc(region, "SetAtlas", function(self)
+        self:SetAlpha(0)
+      end)
+      hooksecurefunc(region, "SetTexture", function(self)
+        self:SetAlpha(0)
+      end)
+    end
+  end
+  if button.Text then
+    ApplyEUIFont(button.Text, 12)
+  end
+  local arrow = button:CreateTexture(nil, "OVERLAY")
+  arrow:SetTexture(TEX_ARROW_DOWN)
+  arrow:SetSize(12, 12)
+  arrow:SetPoint("RIGHT", button, "RIGHT", -6, 0)
+  arrow:SetVertexColor(1, 1, 1, 0.85)
+  button:HookScript("OnEnter", function()
+    local r, g, b = GetAccent()
+    arrow:SetVertexColor(r, g, b, 1)
+  end)
+  button:HookScript("OnLeave", function()
+    arrow:SetVertexColor(1, 1, 1, 0.85)
+  end)
+end
+
+local function StyleEditBox(frame)
+  StripRegions(frame, {"Left", "Right", "Middle", "LeftTexture", "RightTexture", "MiddleTexture"})
+
+  local holder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+  holder:SetPoint("TOPLEFT", -2, 0)
+  holder:SetPoint("BOTTOMRIGHT", 2, 0)
+  holder:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
+  holder:SetBackdrop(backdropInfo)
+  holder:SetBackdropColor(INPUT_BG.r, INPUT_BG.g, INPUT_BG.b, INPUT_BG.a)
+  holder:SetBackdropBorderColor(BORDER.r, BORDER.g, BORDER.b, BORDER.a)
+
+  frame:HookScript("OnEditFocusGained", function()
+    local r, g, b = GetAccent()
+    holder:SetBackdropBorderColor(r, g, b, 0.9)
+  end)
+  frame:HookScript("OnEditFocusLost", function()
+    holder:SetBackdropBorderColor(BORDER.r, BORDER.g, BORDER.b, BORDER.a)
+  end)
+
+  ApplyEUIFont(frame, 12)
+end
+
+local tabLayoutParents = {}
+
+local function LayoutTopTabs(parent)
+  local tabs = parent.Tabs
+  if not tabs then return end
+  local width = parent:GetWidth()
+  if not width or width < 50 then return end
+  local shown = {}
+  for _, tab in ipairs(tabs) do
+    if tab:IsShown() then
+      table.insert(shown, tab)
+    end
+  end
+  if #shown == 0 then return end
+  local avail = width - 4 - 2 * (#shown - 1)
+  if avail < #shown * 20 then return end
+  local total = 0
+  local widths = {}
+  for i, tab in ipairs(shown) do
+    local fs = tab.Text or (tab.GetFontString and tab:GetFontString())
+    local w = ((fs and fs:GetStringWidth()) or 60) + 24
+    widths[i] = w
+    total = total + w
+  end
+  local x = 2
+  for i, tab in ipairs(shown) do
+    local w = avail * widths[i] / total
+    tab:SetWidth(w)
+    tab:ClearAllPoints()
+    tab:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -20)
+    x = x + w + 2
+  end
+end
+
+local function StyleTab(frame)
+  StripRegions(frame, {
+    "Left", "Right", "Middle", "LeftActive", "RightActive", "MiddleActive",
+    "LeftDisabled", "RightDisabled", "MiddleDisabled",
+    "LeftHighlight", "RightHighlight", "MiddleHighlight",
+  })
+  if frame.GetRegions then
+    for _, region in ipairs({frame:GetRegions()}) do
+      if region:IsObjectType("Texture") and region ~= frame.Icon and region ~= frame.SelectedTexture then
+        local atlas = region.GetAtlas and region:GetAtlas()
+        if atlas and atlas:find("tab") then
+          region:SetAlpha(0)
+        end
+      end
+    end
+  end
+
+  ApplyFlatBackdrop(frame, BTN_BG.r, BTN_BG.g, BTN_BG.b, 1)
+
+  local underline = frame:CreateTexture(nil, "OVERLAY")
+  underline:SetPoint("BOTTOMLEFT", 1, 1)
+  underline:SetPoint("BOTTOMRIGHT", -1, 1)
+  underline:SetHeight(2)
+  underline:Hide()
+  underline:SetScript("OnShow", function(self)
+    local r, g, b = GetAccentBar()
+    self:SetColorTexture(r, g, b, 1)
+  end)
+  frame.bgrEllesmereUnderline = underline
+
+  frame:HookScript("OnEnter", function()
+    local ar, ag, ab = GetAccent()
+    frame:SetBackdropBorderColor(ar, ag, ab, 0.9)
+  end)
+  frame:HookScript("OnLeave", function()
+    frame:SetBackdropBorderColor(BORDER.r, BORDER.g, BORDER.b, BORDER.a)
+  end)
+
+  local fontString = frame.GetFontString and frame:GetFontString()
+  if fontString then
+    ApplyEUIFont(fontString, 11)
+  end
+end
+
+local function StyleTrimScrollBar(frame)
+  for _, key in ipairs({"Back", "Forward"}) do
+    local b = frame[key]
+    if b then
+      for _, region in ipairs({b:GetRegions()}) do
+        if region:IsObjectType("Texture") then
+          region:SetAlpha(0)
+        end
+      end
+      if b.Texture then b.Texture:SetAlpha(0) end
+    end
+  end
+  local track = frame.Track
+  if track then
+    for _, region in ipairs({track:GetRegions()}) do
+      if region:IsObjectType("Texture") then
+        region:SetAlpha(0)
+      end
+    end
+  end
+  local thumb = (track and track.Thumb) or (frame.GetThumb and frame:GetThumb())
+  if thumb and not thumb.bgrEllesmereThumb then
+    for _, region in ipairs({thumb:GetRegions()}) do
+      if region:IsObjectType("Texture") then
+        region:SetAlpha(0)
+      end
+    end
+    local t = thumb:CreateTexture(nil, "ARTWORK")
+    t:SetPoint("TOP", thumb, "TOP", 0, 0)
+    t:SetPoint("BOTTOM", thumb, "BOTTOM", 0, 0)
+    t:SetWidth(4)
+    t:SetColorTexture(1, 1, 1, 0.3)
+    thumb.bgrEllesmereThumb = t
+    thumb:HookScript("OnEnter", function()
+      local r, g, b = GetAccent()
+      t:SetColorTexture(r, g, b, 0.8)
+    end)
+    thumb:HookScript("OnLeave", function()
+      t:SetColorTexture(1, 1, 1, 0.3)
+    end)
+  end
+end
+
+local function StyleCheckBox(cb)
+  if cb.bgrEllesmereCheck then return end
+  cb.bgrEllesmereCheck = true
+  if cb.SetNormalTexture then cb:SetNormalTexture("") end
+  if cb.SetPushedTexture then cb:SetPushedTexture("") end
+  if cb.SetHighlightTexture then cb:SetHighlightTexture("") end
+  local checked = cb.GetCheckedTexture and cb:GetCheckedTexture()
+  local dchecked = cb.GetDisabledCheckedTexture and cb:GetDisabledCheckedTexture()
+  for _, region in ipairs({cb:GetRegions()}) do
+    if region ~= checked and region ~= dchecked and region:IsObjectType("Texture") then
+      region:SetAlpha(0)
+    end
+  end
+  local fill = cb:CreateTexture(nil, "BACKGROUND")
+  fill:SetColorTexture(INPUT_BG.r, INPUT_BG.g, INPUT_BG.b, 1)
+  fill:SetPoint("TOPLEFT", 4, -4)
+  fill:SetPoint("BOTTOMRIGHT", -4, 4)
+  local bh = CreateFrame("Frame", nil, cb, "BackdropTemplate")
+  bh:SetPoint("TOPLEFT", 4, -4)
+  bh:SetPoint("BOTTOMRIGHT", -4, 4)
+  bh:SetFrameLevel(cb:GetFrameLevel() + 1)
+  bh:SetBackdrop({edgeFile = WHITE8X8, edgeSize = 1})
+  bh:SetBackdropBorderColor(0.25, 0.25, 0.25, 1)
+  if checked then
+    local r, g, b = GetAccent()
+    checked:SetVertexColor(r, g, b, 1)
+  end
+end
+
+local function GetTransparencyMult()
+  return 1 - addonTable.Config.Get("skins.ellesmereui.view_transparency")
+end
+
+local allShells = {}
+
+local function ApplyWindowStyle(frame)
+  local d = frame.bgrEllesmereShell
+  if not d then return end
+  local mult = GetTransparencyMult()
+  if GetWindowStyle() == "modern" then
+    d.euiBg:SetAlpha(0)
+    d.euiOverlay:SetAlpha(0)
+    local r, g, b, a = GetWindowBG()
+    d.modernBg:SetColorTexture(r, g, b, a * mult)
+    d.modernBg:SetAlpha(1)
+  else
+    d.euiBg:SetAlpha(mult)
+    d.euiOverlay:SetAlpha(mult)
+    d.modernBg:SetColorTexture(0, 0, 0, 0)
+  end
+end
+
+local function BuildWindowShell(frame)
+  if frame.bgrEllesmereShell then return end
+  local d = {}
+  frame.bgrEllesmereShell = d
+  allShells[frame] = true
+
+  local bg = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+  bg:SetTexture(TEX_WINDOW_BG)
+  bg:SetAllPoints(frame)
+  d.euiBg = bg
+
+  local overlay = frame:CreateTexture(nil, "BACKGROUND", nil, -7)
+  overlay:SetColorTexture(0, 0, 0, 0.62)
+  overlay:SetAllPoints(frame)
+  d.euiOverlay = overlay
+
+  local modernBg = frame:CreateTexture(nil, "BACKGROUND", nil, -6)
+  modernBg:SetColorTexture(0, 0, 0, 0)
+  modernBg:SetAllPoints(frame)
+  d.modernBg = modernBg
+
+  local function UpdateBgTexCoords()
+    local fw, fh = frame:GetSize()
+    if not fw or fw == 0 or not fh or fh == 0 then return end
+    local fa = fw / fh
+    if fa > BG_ASPECT then
+      local visV = BASE_V * (BG_ASPECT / fa)
+      local trimV = (BASE_V - visV) / 2
+      bg:SetTexCoord(BASE_L, BASE_R, BASE_T + trimV, BASE_B - trimV)
+    else
+      local visU = BASE_U * (fa / BG_ASPECT)
+      local trimU = (BASE_U - visU) / 2
+      bg:SetTexCoord(BASE_L + trimU, BASE_R - trimU, BASE_T, BASE_B)
+    end
+  end
+  hooksecurefunc(frame, "SetSize", UpdateBgTexCoords)
+  hooksecurefunc(frame, "SetWidth", UpdateBgTexCoords)
+  hooksecurefunc(frame, "SetHeight", UpdateBgTexCoords)
+  UpdateBgTexCoords()
+
+  local topBar = frame:CreateTexture(nil, "BACKGROUND", nil, -5)
+  topBar:SetColorTexture(0, 0, 0, 0.5)
+  topBar:SetPoint("TOPLEFT")
+  topBar:SetPoint("TOPRIGHT")
+  topBar:SetHeight(25)
+  d.topBar = topBar
+
+  local info = C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(BORDER_ATLAS)
+  if info then
+    local ov = CreateFrame("Frame", nil, frame)
+    ov:SetAllPoints(frame)
+    ov:SetFrameLevel(frame:GetFrameLevel() + 6)
+    local tex = ov:CreateTexture(nil, "OVERLAY", nil, 7)
+    tex:SetAtlas(BORDER_ATLAS)
+    tex:SetAllPoints(ov)
+    d.atlasBorderFrame = ov
+  else
+    if not frame.SetBackdrop then
+      Mixin(frame, BackdropTemplateMixin)
+    end
+    frame:SetBackdrop({edgeFile = WHITE8X8, edgeSize = 1})
+    frame:SetBackdropBorderColor(BORDER.r, BORDER.g, BORDER.b, BORDER.a)
+  end
+
+  ApplyWindowStyle(frame)
+end
+
+local function RefreshAllShells()
+  for frame in pairs(allShells) do
+    ApplyWindowStyle(frame)
+  end
+end
+
+local showSlots = true
+local allItemButtons = {}
+
+local skinners = {
+  ItemButton = function(frame, tags)
+    frame.bgrEllesmereHooked = true
+    if frame.Count then
+      ApplyEUIFont(frame.Count, 14)
+    end
+    if not tags.containerBag then
+      table.insert(allItemButtons, frame)
+      frame.SlotBackground:SetColorTexture(0.10, 0.10, 0.10, 0.6)
+      frame.SlotBackground:SetPoint("CENTER")
+      frame.SlotBackground:SetSize(35, 35)
+      frame.SlotBackground:SetShown(showSlots)
+    end
+    if frame.SetItemButtonQuality then
+      hooksecurefunc(frame, "SetItemButtonQuality", ItemButtonQualityHook)
+    end
+    if frame.SetItemButtonTexture then
+      hooksecurefunc(frame, "SetItemButtonTexture", ItemButtonTextureHook)
+    end
+  end,
+  IconButton = function(button)
+    StyleButton(button)
+  end,
+  Button = function(button)
+    StyleButton(button)
+  end,
+  ButtonFrame = function(frame, tags)
+    RemoveFrameTextures(frame)
+    BuildWindowShell(frame)
+
+    frame:HookScript("OnShow", function()
+      ApplyWindowStyle(frame)
+    end)
+    addonTable.CallbackRegistry:RegisterCallback("SettingChanged", function(_, settingName)
+      if settingName == "skins.ellesmereui.view_transparency" then
+        ApplyWindowStyle(frame)
+      end
+    end, frame)
+
+    if frame.CloseButton then
+      StyleCloseButton(frame.CloseButton)
+    end
+    if frame.Character and frame.Character.CloseButton then
+      StyleCloseButton(frame.Character.CloseButton)
+    end
+
+    if tags.backpack then
+      frame.TopButtons[1]:SetPoint("TOPLEFT", 1.5, -1)
+    elseif tags.bank then
+      frame.Character.TopButtons[1]:SetPoint("TOPLEFT", 1.5, -1)
+    elseif tags.guild then
+      frame.ToggleTabTextButton:SetPoint("TOPLEFT", 1.5, -1)
+    end
+
+    if frame.TitleText then
+      ApplyEUIFont(frame.TitleText, 12)
+    end
+
+    frame:HookScript("OnMouseDown", function(self, mouseButton)
+      if mouseButton == "LeftButton"
+        and IsShiftKeyDown()
+        and addonTable.Config.Get("skins.ellesmereui.shift_move") then
+        self.bgrEllesmereMoving = true
+        self:SetMovable(true)
+        self:StartMoving()
+        self:SetUserPlaced(false)
+      end
+    end)
+    frame:HookScript("OnMouseUp", function(self)
+      if self.bgrEllesmereMoving then
+        self.bgrEllesmereMoving = nil
+        if self.OnDragStop then
+          self:OnDragStop()
+        else
+          self:StopMovingOrSizing()
+          self:SetUserPlaced(false)
+        end
+      end
+    end)
+    frame:HookScript("OnHide", function(self)
+      if self.bgrEllesmereMoving then
+        self.bgrEllesmereMoving = nil
+        self:StopMovingOrSizing()
+        self:SetUserPlaced(false)
+      end
+    end)
+  end,
+  SearchBox = function(frame)
+    StyleEditBox(frame)
+  end,
+  EditBox = function(frame)
+    StyleEditBox(frame)
+  end,
+  TabButton = function(frame)
+    StyleTab(frame)
+  end,
+  TopTabButton = function(frame)
+    StyleTab(frame)
+    local parent = frame:GetParent()
+    if parent and parent.Tabs then
+      frame:HookScript("OnShow", function()
+        LayoutTopTabs(parent)
+      end)
+      frame:HookScript("OnHide", function()
+        LayoutTopTabs(parent)
+      end)
+      if not tabLayoutParents[parent] then
+        tabLayoutParents[parent] = true
+        parent:HookScript("OnSizeChanged", function()
+          LayoutTopTabs(parent)
+        end)
+        parent:HookScript("OnShow", function()
+          C_Timer.After(0, function()
+            LayoutTopTabs(parent)
+          end)
+        end)
+      end
+      C_Timer.After(0, function()
+        LayoutTopTabs(parent)
+      end)
+    end
+  end,
+  SideTabButton = function(frame)
+    if frame.Background then
+      frame.Background:Hide()
+    end
+
+    frame.Icon:ClearAllPoints()
+    frame.Icon:SetPoint("CENTER")
+    frame.Icon:SetSize(25, 25)
+    frame.Icon:SetTexCoord(unpack(texCoords))
+
+    frame.SelectedTexture:ClearAllPoints()
+    frame.SelectedTexture:SetPoint("BOTTOMLEFT", 1, 1)
+    frame.SelectedTexture:SetPoint("BOTTOMRIGHT", -1, 1)
+    frame.SelectedTexture:SetHeight(2)
+    frame.SelectedTexture:SetTexture(WHITE8X8)
+    frame.SelectedTexture:SetScript("OnShow", function(self)
+      local r, g, b = GetAccentBar()
+      self:SetVertexColor(r, g, b, 1)
+    end)
+    local r, g, b = GetAccentBar()
+    frame.SelectedTexture:SetVertexColor(r, g, b, 1)
+
+    ApplyFlatBackdrop(frame, BTN_BG.r, BTN_BG.g, BTN_BG.b, 1)
+    frame:HookScript("OnEnter", function()
+      local ar, ag, ab = GetAccent()
+      frame:SetBackdropBorderColor(ar, ag, ab, 0.9)
+    end)
+    frame:HookScript("OnLeave", function()
+      frame:SetBackdropBorderColor(BORDER.r, BORDER.g, BORDER.b, BORDER.a)
+    end)
+  end,
+  TrimScrollBar = function(frame)
+    StyleTrimScrollBar(frame)
+  end,
+  ScrollButton = function(button, tags)
+    button:ClearNormalTexture()
+    local tex = button:CreateTexture(nil, "ARTWORK")
+    tex:SetTexture(tags.left and TEX_ARROW_LEFT or TEX_ARROW_RIGHT)
+    tex:SetSize(14, 14)
+    tex:SetPoint("CENTER")
+    tex:SetVertexColor(1, 1, 1, 0.9)
+    button:HookScript("OnEnter", function()
+      local r, g, b = GetAccent()
+      tex:SetVertexColor(r, g, b, 1)
+    end)
+    button:HookScript("OnLeave", function()
+      tex:SetVertexColor(1, 1, 1, 0.9)
+    end)
+  end,
+  CheckBox = function(frame)
+    StyleCheckBox(frame)
+  end,
+  Slider = function(frame)
+    local slider = frame.Slider or frame
+    local thumb = slider.GetThumbTexture and slider:GetThumbTexture()
+    for i = 1, select("#", slider:GetRegions()) do
+      local region = select(i, slider:GetRegions())
+      if region:IsObjectType("Texture") and region ~= thumb then
+        region:SetAlpha(0)
+        hooksecurefunc(region, "SetAtlas", function(self)
+          self:SetAlpha(0)
+        end)
+      end
+    end
+    if slider.NineSlice then
+      slider.NineSlice:SetAlpha(0)
+    end
+    for _, key in ipairs({"RightText", "LeftText", "TopText", "MinText", "MaxText"}) do
+      if frame[key] then
+        ApplyEUIFont(frame[key], 12)
+      end
+    end
+    local EUI = EllesmereUI
+    local track = slider:CreateTexture(nil, "BACKGROUND")
+    track:SetTexture(WHITE8X8)
+    track:SetVertexColor(
+      (EUI and EUI.SL_TRACK_R) or 1,
+      (EUI and EUI.SL_TRACK_G) or 1,
+      (EUI and EUI.SL_TRACK_B) or 1,
+      (EUI and EUI.SL_TRACK_A) or 0.16)
+    track:SetPoint("LEFT", slider, "LEFT", 0, 0)
+    track:SetPoint("RIGHT", slider, "RIGHT", 0, 0)
+    track:SetHeight(4)
+    local ar, ag, ab = GetAccent()
+    if thumb then
+      local fill = slider:CreateTexture(nil, "BORDER")
+      fill:SetTexture(WHITE8X8)
+      fill:SetVertexColor(ar, ag, ab, (EUI and EUI.SL_FILL_A) or 0.75)
+      fill:SetPoint("LEFT", track, "LEFT", 0, 0)
+      fill:SetPoint("RIGHT", thumb, "CENTER", 0, 0)
+      fill:SetHeight(4)
+      local function PaintThumb()
+        thumb:SetTexture(WHITE8X8)
+        thumb:SetSize(14, 14)
+        local r, g, b = GetAccent()
+        thumb:SetVertexColor(r, g, b, 1)
+      end
+      PaintThumb()
+      hooksecurefunc(thumb, "SetAtlas", PaintThumb)
+    end
+    for key, arrow in pairs({Back = TEX_ARROW_LEFT, Forward = TEX_ARROW_RIGHT}) do
+      local btn = frame[key]
+      if btn then
+        for i = 1, select("#", btn:GetRegions()) do
+          local region = select(i, btn:GetRegions())
+          if region:IsObjectType("Texture") then
+            region:SetAlpha(0)
+            hooksecurefunc(region, "SetAtlas", function(self)
+              self:SetAlpha(0)
+            end)
+          end
+        end
+        local tex = btn:CreateTexture(nil, "ARTWORK")
+        tex:SetTexture(arrow)
+        tex:SetSize(12, 12)
+        tex:SetPoint("CENTER")
+        tex:SetVertexColor(1, 1, 1, 0.9)
+        btn:HookScript("OnEnter", function()
+          local r, g, b = GetAccent()
+          tex:SetVertexColor(r, g, b, 1)
+        end)
+        btn:HookScript("OnLeave", function()
+          tex:SetVertexColor(1, 1, 1, 0.9)
+        end)
+      end
+    end
+  end,
+  CategoryLabel = function(frame)
+    if frame.GetFontString and frame:GetFontString() then
+      ApplyEUIFont(frame:GetFontString(), 12)
+    elseif frame.IsObjectType and frame:IsObjectType("FontString") then
+      ApplyEUIFont(frame, 12)
+    end
+  end,
+  CategorySectionHeader = function(frame)
+    if frame.GetFontString and frame:GetFontString() then
+      ApplyEUIFont(frame:GetFontString(), 12)
+    end
+  end,
+  InsetFrame = function(frame)
+    RemoveFrameTextures(frame)
+    ApplyFlatBackdrop(frame, INSET_BG.r, INSET_BG.g, INSET_BG.b, INSET_BG.a)
+  end,
+  CornerWidget = function(frame)
+    if frame:IsObjectType("FontString") then
+      ApplyEUIFont(frame, 14)
+    end
+  end,
+  Dropdown = function(button)
+    StyleDropdown(button)
+  end,
+  Divider = function(tex)
+    tex:SetTexture(WHITE8X8)
+    tex:SetPoint("TOPLEFT", 0, 0)
+    tex:SetPoint("TOPRIGHT", 0, 0)
+    tex:SetHeight(1)
+    tex:SetColorTexture(SEPARATOR.r, SEPARATOR.g, SEPARATOR.b, SEPARATOR.a)
+  end,
+  Dialog = function(frame)
+    RemoveFrameTextures(frame)
+    local function Recolor()
+      if GetWindowStyle() == "modern" then
+        local r, g, b = GetWindowBG()
+        frame:SetBackdropColor(r, g, b, 0.97)
+      else
+        frame:SetBackdropColor(MODERN_FALLBACK.r, MODERN_FALLBACK.g, MODERN_FALLBACK.b, 0.97)
+      end
+    end
+    ApplyFlatBackdrop(frame, MODERN_FALLBACK.r, MODERN_FALLBACK.g, MODERN_FALLBACK.b, 0.97)
+    Recolor()
+    frame:HookScript("OnShow", Recolor)
+  end,
+}
+
+local function SkinFrame(details)
+  local func = skinners[details.regionType]
+  if func then
+    func(details.region, details.tags and ConvertTags(details.tags) or {})
+  end
+end
+
+local function SetConstants()
+  addonTable.Constants.ButtonFrameOffset = 0
+end
+
+local useFontOption = {
+  type = "checkbox",
+  text = L.ELLESMEREUI_USE_FONT_X:format("Expressway"),
+  rightText = addonTable.Locales.RELOAD_REQUIRED,
+  option = "use_font",
+  default = true,
+}
+
+local function UpdateFontOptionLabel()
+  local EUI = EllesmereUI
+  if EUI and EUI.GetFontName then
+    useFontOption.text = L.ELLESMEREUI_USE_FONT_X:format(EUI.GetFontName("Baganator"))
+  end
+end
+
+local function LoadSkin()
+  showSlots = not addonTable.Config.Get("skins.ellesmereui.empty_slot_background")
+
+  HookMenuManager()
+
+  UpdateFontOptionLabel()
+
+  if EllesmereUI and type(EllesmereUI._WSkinRefreshStyles) == "function" then
+    hooksecurefunc(EllesmereUI, "_WSkinRefreshStyles", RefreshAllShells)
+  end
+
+  if addonTable.API.IsMasqueApplying() then
+    skinners.ItemButton = function(frame, tags)
+      if not tags.containerBag then
+        table.insert(allItemButtons, frame)
+        frame.SlotBackground:SetShown(showSlots)
+      end
+    end
+  end
+
+  addonTable.CallbackRegistry:RegisterCallback("SettingChanged", function(_, settingName)
+    if settingName == "skins.ellesmereui.empty_slot_background" then
+      showSlots = not addonTable.Config.Get("skins.ellesmereui.empty_slot_background")
+      for _, button in ipairs(allItemButtons) do
+        button.SlotBackground:SetShown(showSlots)
+      end
+    elseif settingName == "skins.ellesmereui.font_outline" or settingName == "skins.ellesmereui.font_shadow" then
+      RefreshAllFonts()
+    end
+  end)
+end
+
+if addonTable.Skins.IsAddOnLoading("EllesmereUI") then
+  addonTable.Skins.RegisterSkin("EllesmereUI", "ellesmereui", LoadSkin, SkinFrame, SetConstants, {
+    {
+      type = "slider",
+      min = 0,
+      max = 100,
+      lowText = "0%",
+      highText = "100%",
+      scale = 100,
+      text = addonTable.Locales.TRANSPARENCY,
+      valuePattern = addonTable.Locales.PERCENTAGE_PATTERN,
+      option = "view_transparency",
+      default = 0,
+    },
+    {
+      type = "checkbox",
+      text = addonTable.Locales.HIDE_ICON_BACKGROUNDS,
+      option = "empty_slot_background",
+      default = false,
+    },
+    useFontOption,
+    {
+      type = "dropdown",
+      text = L.ELLESMEREUI_FONT_OUTLINE,
+      option = "font_outline",
+      entries = {
+        L.ELLESMEREUI_SETTING,
+        L.ELLESMEREUI_OUTLINE_NONE,
+        L.ELLESMEREUI_OUTLINE,
+        L.ELLESMEREUI_THICK_OUTLINE,
+        L.ELLESMEREUI_MONOCHROME,
+        L.ELLESMEREUI_MONOCHROME_OUTLINE,
+        L.ELLESMEREUI_MONOCHROME_THICK_OUTLINE,
+      },
+      values = {
+        "GLOBAL",
+        "",
+        "OUTLINE",
+        "THICKOUTLINE",
+        "MONOCHROME",
+        "MONOCHROME,OUTLINE",
+        "MONOCHROME,THICKOUTLINE",
+      },
+      default = "GLOBAL",
+    },
+    {
+      type = "dropdown",
+      text = L.ELLESMEREUI_FONT_SHADOW,
+      option = "font_shadow",
+      entries = {
+        L.ELLESMEREUI_SETTING,
+        L.ELLESMEREUI_SHADOW_ALWAYS_ON,
+        L.ELLESMEREUI_SHADOW_ALWAYS_OFF,
+      },
+      values = {
+        "GLOBAL",
+        "ON",
+        "OFF",
+      },
+      default = "GLOBAL",
+    },
+    {
+      type = "checkbox",
+      text = L.ELLESMEREUI_SHIFT_MOVE,
+      option = "shift_move",
+      default = false,
+    },
+  }, true)
+end
